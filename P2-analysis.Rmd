@@ -1,0 +1,256 @@
+---
+title: "Portfolio 2 - Analysis"
+author: "Angelina Allen"
+date: "2024-05-07"
+output: 
+  html_document:
+    self_contained: true
+---
+
+```{r setup, include=FALSE, purl=FALSE}
+# Use echo = FALSE for Portfolio assignments
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+```
+
+```{r metadata, echo=FALSE}
+# Author:  Angelina
+# Date:    2024-05-07
+# Purpose: Portfolio 2 - Analysis
+#-------------------------------------------------------------------------------
+```
+
+
+```{r packages}
+# Load packages
+suppressPackageStartupMessages(library("tidyverse")); theme_set(theme_bw())
+library("knitr")
+library("kableExtra")
+```
+
+## Introduction
+The social media usage data set consists of 1000 observations generated from Python's 'NumPy' library. This data shows how much a user spends time on their devices using social media. The author, Y. Joshua, generated this data to train an AI model for practice purposes. In particular, I am interested in using it to analyze the scientific question of "How does gender and age affect time spent on devices through social media?"
+
+## Data
+
+```{r summary-statistics}
+# Calculate summary statistics by wool-tension combination
+data <- read_csv("Social_Media_Usage.csv")
+
+breaks <- c(0,20,40, Inf)
+labels <- c("Teen", "Young Adult", "Adult")
+
+
+newdata <-data |>
+  mutate(age_group = cut(age, 
+                         breaks = breaks, 
+                         labels = labels, 
+                         right = FALSE))
+
+s <- newdata |>
+  group_by(gender, age_group)|>
+  summarize(
+     count = n(),
+     mean_time_spent = mean(time_spent),
+     median_time_spent = median(time_spent),
+     min_time_spent = min(time_spent),
+     max_time_spent = max(time_spent),
+     sd_time_spent = sd(time_spent),
+     .groups = 'drop'
+  )
+total_observations <- nrow(newdata)
+
+summary_stats <- s |>
+  mutate(total_observations = total_observations)
+```
+
+This data set has 1000 generated observations with twelve variables (age, gender, time_spent, platform, interest, location, demographic, profession, income, indebt, isHomeOwner, Owns_Car). The age variable was a list of numeric numbers that I converted into a factor with three levels. 0-19 for teens, 20-39 for young adults, and 40-infinite for adults. So, in our new data set there is one more added variable named age_group. For this specific question, we will only look at age_group, gender, and time_spent. The table below provides a summary statistic of the variables. This shows the total number of observations and marginal summaries for the response(time spent) and two explanatory variables(age group and gender). 
+
+
+```{r summary-statistics-table}
+# Create HTML table from summary statistics
+kable(summary_stats, 
+      format = "html", 
+      caption = "Summary Statistic of age group, timespent, gender variables",
+      col.names = c("gender",
+                    "age level",
+                    "count",
+                    "mean(time)",
+                    "median(time)", 
+                    "min(time",
+                    "max(time)",
+                    "sd(time)",
+                    "total obs")) |>
+  kable_styling()
+
+```
+
+The figure below displays a box plot of the time spent on a device versus age group and gender. When comparing male to female to non-binary, this figure suggests that the mean number of times spent on a device for young adults and adults is equal, though the means vary for teens. One specific thing to acknowledge is if you look at the above table, the sample size for the teen group is significantly smaller than the sample size for young adults and adults. This can impact the averages of the teen group. 
+
+```{r exploratory}
+# Create exploratory plot of the data
+ggplot(data = newdata, aes(x = age_group,
+                        y = time_spent,
+                        color = gender)) + 
+            geom_boxplot() +
+            labs(titlel = "Explanatory Plot of the Response vs the Explanatory", 
+                 x      = "Age Group", 
+                 y      = "Time Spent(hrs)", 
+                 color  = "Gender")
+```
+
+## Results
+
+```{r model-interaction}
+# Fit linear regression model 
+m            <- lm(time_spent ~ gender + age_group, 
+                   data = newdata)
+
+#model with interaction
+m2 <- lm(time_spent ~ gender * age_group, 
+                   data = newdata)
+```
+
+Due to our response variable being time spent which is continuous, 
+we will fit a simple linear regression model for time spent on a device on
+age group and gender.
+The Simple Linear Regression model assumes: 
+$$Y_i \stackrel{ind}{\sim} N(\beta_0 + \beta_1X_i,\sigma^2)$$
+for $i = 1$,..., n or , equivalently, 
+$$Y_i = \beta_0 + \beta_1X_i + \epsilon_i$$ $$\epsilon_i\stackrel{ind}{\sim} N(0,\sigma^2)$$ 
+where, for observations $i$, 
+ 
+ * $Y_i$ is the value of the response variable
+ * $X_i$ is the value of the explanatory variable
+ * $\epsilon_i$ is the error 
+
+The model parameters are 
+ 
+ * the intercept $\beta_0$
+ * the slop $\beta_1$
+ * the error variance $\sigma^2$
+
+Where the response variable ($Y_i$) is time spent on a device, the first explanatory($X_i1$) is age group (teen, young adult, adult), the second explanatory($X_i2$) is gender (female, male, non-binary) and the error term ($\epsilon_i$)  assumed to follow a normal distribution with mean 0 and variance $\sigma^2$.
+
+
+Now, we will evaluate the interaction between age group and gender to see if it is significant enough to keep in the model. Below is a plot of the estimated mean time spent on a device with 95% confidence intervals with interaction included. When looking at the graph, we see crossed-line segments, which we would expect a test for interaction to be significant. Though, looking at the ANOVA for our model, p $\approx$(`r anova(m2)$"Pr(>F)"[3]`). The p-value does not show evidence of an interaction. This could be because the data has a lot of noise or variability. Or, since the sample for one level is significantly smaller, it may not provide enough statistical power to detect an interaction effect.   
+
+```{r}
+#interaction regression model
+nd <- newdata |>
+  select(gender, age_group) |>
+  unique()
+
+ci2 <- bind_cols(
+  nd,
+  predict(m2,
+          newdata = nd,
+          interval = "confidence") |>
+    as.data.frame() |>
+    rename(time_spent = fit)
+)
+
+ggplot(data = newdata, aes(x = age_group,
+                           y = time_spent,
+                           color = gender)) + 
+  geom_jitter()+
+  geom_pointrange(
+    data = ci2,
+    aes(
+      ymin = lwr,
+      ymax = upr
+    ),
+    position = position_dodge(width = 0.1)
+  )+ 
+  geom_line(
+    data = ci2,
+    aes(
+      group = gender
+    )) +
+  labs(
+    x = "Age Group",
+    y = "Time Spent (hrs)",
+    title = "Estimated Mean Time Spent with 95% Confidence Intervals",
+    subtitle = "Simple Linear Regression Model with Interaction"
+  )
+
+```
+   
+Since the interaction between gender and age group is not significant we will not keep the interaction in the model. 
+
+
+
+A plot of the estimated mean time spent on a device and 95% confidence
+intervals are provided below. Similarly, as we saw in the original data, the estimated mean of time spent on a device for a teen among all genders has more variability than the estimated mean for young adults and adults among all genders. Specifically for teens, females have a higher estimated mean time spent on a device than males and non-binary. Another notable observation is that the estimated mean time spent on a device decreases as people age. 
+
+```{r}
+nd <- newdata |>
+  select(gender, age_group) |>
+  unique()
+
+# Construct confidence intervals
+ci <- bind_cols(
+  nd,
+  predict(m,
+          newdata = nd,
+          interval = "confidence") |>
+    as.data.frame() |>
+    rename(time_spent = fit)
+)
+
+ggplot(data = newdata, aes(x = age_group,
+                               y = time_spent,
+                               color = gender)) + 
+  geom_jitter()+
+  geom_pointrange(
+    data = ci,
+    aes(
+      ymin = lwr,
+      ymax = upr
+    ),
+    position = position_dodge(width = 0.1)
+  )+ 
+  geom_line(
+    data = ci,
+    aes(
+      group = gender
+    )
+  ) +
+  labs(
+    x = "Age Group",
+    y = "Time Spent (hrs)",
+    title = "Estimated Mean Time Spent with 95% Confidence Intervals",
+    subtitle = "Simple Linear Regression Model")
+```
+
+## Discussion
+```{r}
+ci <- bind_cols(
+  nd,
+  predict(m,
+          newdata = nd,
+          interval = "confidence") |>
+    as.data.frame() |>
+    rename(time_spent = fit)
+)
+```
+
+The social media usage data was generated from Python's 'NumPy' library. Our goal was to see how gender and age affect time spent on devices through social media. Precisely, we looked at a simple linear regression model of the effect of gender(male, female, non-binary) and age(teen, young adult, adult) on the estimated mean time spent (hours). We found that the estimated means for young adults and adults were very similar across the genders, and for teens, it was higher with more variability between the genders. The 95% confidence interval for each level of estimated mean time spent is listed in the table below.  
+  
+
+```{r}
+ci |>
+  kable(format = "html", 
+        caption = "95% confidence intervals for each level",
+        col.names = c("gender",
+                      "age level",
+                      "estimated mean(time)",
+                      "lwr ci", 
+                      "upr ci")) |>
+  kable_styling()
+```
+
+The diagnostic plot shows a clear pattern in the data points, potentially indicating a violation of the independence assumption. Since we are working with two categorical explanatory variables, grouping can be in effect, which may show patterns or trends. The qq-plot of the residuals might indicate some violation of the normality assumption due to the tail ends of the data veering off the line. Though, to some, this might be a reasonable qq-plot. When looking at the variability between the combinations, we noticed early in the original plot that teens for all genders are more spread out than young adults and adults. Now, looking at the residual vs fitted plot, there does not seem to be any source of evidence violating the constant variance assumption. 
+
+Just because the NumPy library generated the data does not inherently imply that it is randomized. This ultimately depends on how the author picked to generate the data and what pattern or distribution was used. If we collected our data from a random sample of people at a random age and gender, we could claim that age and gender caused the difference in time spent on a device. Additionally, since this is not randomly assigned, we must be careful in extending these results to a larger population, especially when some groups in our data need a larger sample size for that group.  
+ 
+
